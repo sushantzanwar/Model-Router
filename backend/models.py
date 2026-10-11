@@ -17,7 +17,7 @@ import os
 import json
 import tempfile
 import copy
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from typing import Optional, Dict, List, Any, Tuple
 from threading import Lock
 
@@ -48,6 +48,9 @@ class ModelProfile:
         supports_images     : Vision input capability flag
         capabilities        : Capabilities reported by Ollama (completion, thinking, vision, etc.)
         description         : Detailed description
+        tier                : 'stable' or 'experimental' (experimental is slightly penalised under balanced routing)
+        task_affinity       : Suitability 0..1 per task type (from the model card / catalog; judge-editable)
+        max_concurrency     : Requests the model can serve at once before queueing (drives the load penalty)
     """
     model_key: str
     name: str
@@ -67,6 +70,9 @@ class ModelProfile:
     supports_images: bool = False
     capabilities: str = "completion, thinking, tools"
     description: str = ""
+    tier: str = "stable"
+    task_affinity: Dict[str, float] = field(default_factory=dict)
+    max_concurrency: int = 2
 
     # Legacy/compatibility aliases
     @property
@@ -117,6 +123,9 @@ _DEFAULT_PROFILES: List[dict] = [
         "supports_images": True,
         "capabilities": "completion, thinking, tools, vision",
         "description": "Ultra-fast 2.7GB model with vision. Ideal for short summaries and factual questions.",
+        "tier": "stable",
+        "max_concurrency": 3,
+        "task_affinity": {'conversation': 0.95, 'factual': 0.8, 'explanation': 0.6, 'summarization': 0.7, 'translation': 0.65, 'creative': 0.6, 'coding': 0.35, 'math': 0.35, 'reasoning': 0.3, 'analysis': 0.4},
     },
     {
         "model_key": "qwen-4b",
@@ -137,6 +146,9 @@ _DEFAULT_PROFILES: List[dict] = [
         "supports_images": True,
         "capabilities": "completion, thinking, tools, vision",
         "description": "Everyday balanced 3.3GB model with vision. Balances speed, context, and quality.",
+        "tier": "stable",
+        "max_concurrency": 3,
+        "task_affinity": {'conversation': 0.9, 'factual': 0.85, 'explanation': 0.8, 'summarization': 0.85, 'translation': 0.8, 'creative': 0.75, 'coding': 0.6, 'math': 0.6, 'reasoning': 0.55, 'analysis': 0.7},
     },
     {
         "model_key": "deepseek-r1",
@@ -157,6 +169,9 @@ _DEFAULT_PROFILES: List[dict] = [
         "supports_images": False,
         "capabilities": "completion, thinking, tools",
         "description": "Deep 4.7GB chain-of-thought model. Excels at formal proofs, logic, and mathematics.",
+        "tier": "stable",
+        "max_concurrency": 2,
+        "task_affinity": {'conversation': 0.4, 'factual': 0.7, 'explanation': 0.8, 'summarization': 0.6, 'translation': 0.5, 'creative': 0.45, 'coding': 0.8, 'math': 0.98, 'reasoning': 0.98, 'analysis': 0.85},
     },
     {
         "model_key": "gemma-12b",
@@ -177,6 +192,9 @@ _DEFAULT_PROFILES: List[dict] = [
         "supports_images": True,
         "capabilities": "audio, completion, thinking, tools, vision",
         "description": "Multimodal 8.0GB architecture with native vision & document extraction.",
+        "tier": "stable",
+        "max_concurrency": 2,
+        "task_affinity": {'conversation': 0.75, 'factual': 0.85, 'explanation': 0.85, 'summarization': 0.92, 'translation': 0.9, 'creative': 0.85, 'coding': 0.7, 'math': 0.7, 'reasoning': 0.75, 'analysis': 0.88},
     },
     {
         "model_key": "gpt-oss-20b",
@@ -197,6 +215,9 @@ _DEFAULT_PROFILES: List[dict] = [
         "supports_images": False,
         "capabilities": "completion, thinking, tools",
         "description": "High-capacity 13GB coding engine for complex software architecture and debugging.",
+        "tier": "experimental",
+        "max_concurrency": 1,
+        "task_affinity": {'conversation': 0.6, 'factual': 0.85, 'explanation': 0.9, 'summarization': 0.8, 'translation': 0.75, 'creative': 0.8, 'coding': 0.98, 'math': 0.88, 'reasoning': 0.92, 'analysis': 0.92},
     },
 ]
 
@@ -216,6 +237,9 @@ class ModelRegistry:
         "availability": bool,
         "enabled": bool,
         "cost_per_1k_tokens": (int, float),
+        "tier": str,
+        "task_affinity": dict,
+        "max_concurrency": int,
         # Legacy/UI alias support
         "latency_ms": (int, float),
         "capability": (int, float),
@@ -254,6 +278,12 @@ class ModelRegistry:
                             item["enabled"] = True
                         if "role" not in item:
                             item["role"] = "General task"
+
+                        # Fill fields added in newer versions from the canonical defaults
+                        defaults = next((d for d in _DEFAULT_PROFILES if d["model_key"] == item.get("model_key")), {})
+                        for fld in ("tier", "task_affinity", "max_concurrency", "supports_images", "capabilities"):
+                            if fld not in item and fld in defaults:
+                                item[fld] = copy.deepcopy(defaults[fld])
 
                         # Strip non-dataclass keys if any
                         clean_item = {
@@ -322,6 +352,17 @@ class ModelRegistry:
                 return False, "'cost_per_1k_tokens' cannot be negative"
             if key == "context_length" and val < 128:
                 return False, "'context_length' must be at least 128 tokens"
+            if key == "tier" and val not in ("stable", "experimental"):
+                return False, "'tier' must be 'stable' or 'experimental'"
+            if key == "max_concurrency" and not (1 <= val <= 64):
+                return False, "'max_concurrency' must be between 1 and 64"
+            if key == "task_affinity":
+                from brain.neural import TASKS
+                for t, a in val.items():
+                    if t not in TASKS:
+                        return False, f"Unknown task '{t}' in task_affinity (valid: {', '.join(TASKS)})"
+                    if not isinstance(a, (int, float)) or not (0.0 <= a <= 1.0):
+                        return False, f"task_affinity['{t}'] must be between 0.0 and 1.0"
 
         return True, None
 
@@ -361,17 +402,22 @@ class ModelRegistry:
                     profile.enabled = bool(val)
                 elif key == "cost_per_1k_tokens":
                     profile.cost_per_1k_tokens = float(val)
+                elif key == "tier":
+                    profile.tier = val
+                elif key == "max_concurrency":
+                    profile.max_concurrency = int(val)
+                elif key == "task_affinity":
+                    profile.task_affinity = {**profile.task_affinity, **{t: float(a) for t, a in val.items()}}
 
             self._save_to_disk_locked()
             return copy.deepcopy(profile), None
 
     def record_measured_latency(self, model_key: str, measured_ms: int):
-        """Update actual measured execution latency without changing judge configuration."""
+        """Update actual measured execution latency (runtime only - judge configuration file is untouched)."""
         with self._lock:
             profile = self._store.get(model_key)
             if profile:
-                profile.measured_latency_ms = measured_ms
-                self._save_to_disk_locked()
+                profile.measured_latency_ms = int(measured_ms)
 
     def reset(self) -> List[dict]:
         """Reset all model profiles to canonical defaults."""

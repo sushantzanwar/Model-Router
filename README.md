@@ -2,49 +2,50 @@
 
 **Domain 2: AI Systems & Infrastructure (Challenge A-01)**
 
-An intelligent inference gateway that dynamically routes each request to the optimal model based on **hard constraints** (latency, cost, capability, context length), with **explainable decisions** and **constraint-preserving failover**.
+An intelligent inference gateway that dynamically routes incoming requests to the optimal AI model based on **hard constraints** (latency, cost, capability, context length), with **explainable routing decisions** and **constraint-preserving failover**.
 
 ---
 
 ## 🎯 Problem Statement & Requirements
 
 | Requirement | Implementation in ModelRouter |
-|-------------|-------------------------------|
-| **Hard Constraints** | Maximum latency, maximum cost, minimum capability, and required context length are strictly non-negotiable. A model that violates any constraint is **never** a valid choice. |
-| **Explainable Decisions** | Every routing decision provides a full candidate evaluation matrix: which models were considered, exact checks passed/failed, scoring formula breakdown, and why the winner was selected. |
-| **Constraint-Preserving Failover** | Treats endpoints as unreliable. If a model fails or breaches its latency budget, the gateway fails over only to remaining models that meet all constraints. **Failover never relaxes a constraint**. |
-| **No-Violation Safety** | If no model meets the constraints, the gateway clearly rejects the request rather than dispatching to an invalid model. |
-| **Uncertainty Protection** | Query complexity is estimated from content with an uncertainty safety factor; when unsure, the router chooses the safer (higher capability) option. |
-| **Judge Runtime Controls** | Judges can dynamically change any model's latency, availability, reliability, or load in real time and observe immediate re-routing without restarts. |
+| :--- | :--- |
+| **Hard Constraints** | Maximum latency, maximum cost, minimum capability, and required context length are strictly non-negotiable. Any candidate violating even one constraint is **rejected immediately**. |
+| **Explainable Decisions** | Every routing decision provides an exhaustive evaluation matrix: candidates evaluated, pass/fail checks, mathematical score breakdown, and explanation of why the winner was chosen. |
+| **Constraint-Preserving Failover** | Treats endpoints as unreliable. When a primary model fails or breaches SLA, the gateway cascades down the priority queue **only** to models that satisfy all initial hard constraints. Constraints are never relaxed. |
+| **No-Violation Safety** | If no registered model satisfies the requested SLA, the gateway returns a clear, explicit rejection (`NO_VALID_MODEL`) rather than dispatching to an ineligible model. |
+| **Uncertainty Protection** | Query complexity and task suitability are continuously evaluated from prompt semantics and structural features with an uncertainty safety factor; when confidence is low, the router promotes to a safer capability tier. |
+| **Judge Runtime Controls** | Judges can interactively modify any model's latency, availability, reliability, or load in real time and observe instantaneous routing adaptations without service restarts. |
 
 ---
 
-## 🧠 Model Portfolio (Ollama Prototype)
+## 🧠 Model Portfolio
 
-| Model | Role in ModelRouter | Download Size | Recommendation | Capability (1-10) | Context Length | Avg / Max Latency | Reliability |
-|-------|---------------------|---------------|----------------|-------------------|----------------|-------------------|-------------|
-| **Qwen3.5 2B** | Fast model for simple requests | ~2.7 GB | Essential | 3/10 | 4,096 | 650ms / 1,800ms | 96% |
-| **Qwen3.5 4B** | Balanced model for everyday requests | ~3.3–4.0 GB | Essential | 5/10 | 8,192 | 1,250ms / 3,200ms | 94% |
-| **DeepSeek-R1 7B** | Reasoning model for complex requests | ~4.7 GB | Essential | 8/10 | 16,384 | 2,800ms / 7,500ms | 91% |
-| **Phi-4-mini 3.8B** | Alternative for reasoning & mathematics | ~2.5 GB | Optional | 6/10 | 8,192 | 1,600ms / 4,200ms | 92% |
-| **Qwen3.5 9B** | Higher-capability candidate | ~6.6 GB | Experimental | 9/10 | 32,768 | 4,600ms / 11,500ms | 89% |
+ModelRouter manages a diverse portfolio of local & simulated models with distinct cost, speed, and capability profiles:
 
-> **Note**: As requested, models do not need to be pre-downloaded right now. The gateway features a hybrid execution engine: if local Ollama has models pulled, it invokes them live; otherwise, it executes high-fidelity persona-specific responses and real-time latency simulation.
+| Model | Key Role | Capability (1-10) | Context Window | Avg / Max Latency | Reliability | Cost / 1k Tokens |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: |
+| **Qwen3.5 2B** | Fast fact retrieval, simple chat | 3/10 | 4,096 | 650ms / 1,800ms | 96% | $0.00020 |
+| **Qwen3.5 4B** | Balanced everyday tasks & QA | 5/10 | 8,192 | 1,250ms / 3,200ms | 94% | $0.00040 |
+| **DeepSeek-R1 7B** | Complex reasoning, logic & math | 8/10 | 16,384 | 2,800ms / 7,500ms | 91% | $0.00070 |
+| **Gemma 4 12B** | Extended context & deep analysis | 7/10 | 32,768 | 3,400ms / 8,200ms | 93% | $0.00085 |
+| **GPT-OSS 20B** | High-capacity reasoning candidate | 9/10 | 32,768 | 4,600ms / 11,500ms | 89% | $0.00120 |
+
+> **Hybrid Execution Engine**: If local Ollama models are running, the gateway dispatches real-time inference. When models are not downloaded locally, it gracefully executes high-fidelity persona simulation and real-time latency emulation to allow full judging of all routing pipelines.
 
 ---
 
-## ⚙️ Prioritized Parameters
+## ⚙️ Routing Logic & Prioritized Parameters
 
-As specified in the prototype requirements:
-1. **Latency** *(Essential)*: Worst-case max latency checked against user SLA budget.
-2. **Capability score** *(Essential)*: Evaluated against user threshold & safe query complexity.
-3. **Context length** *(Essential)*: Ensures total tokens fit model window.
-4. **Availability** *(Essential)*: Validates endpoint online / reachable status.
-5. **Task suitability** *(Highly useful)*: Task match bonus (e.g. coding, math, reasoning, translation).
-6. **Reliability** *(Highly useful)*: Historical uptime weight in composite ranking.
-7. **Output token capacity** *(Useful)*: Verified against expected response length.
-8. **Current load** *(Useful)*: Real-time load penalty to prevent queue saturation.
-9. **Cost** *(Useful)*: Evaluated as a hard ceiling constraint.
+Candidate models are scored and prioritized based on:
+1. **Latency SLA Budget** *(Essential)*: Worst-case bounded latency evaluated against user SLA.
+2. **Capability Score** *(Essential)*: Evaluated against minimum threshold & inferred query complexity.
+3. **Context Length** *(Essential)*: Guarantees prompt tokens + estimated response fit within the model window.
+4. **Availability** *(Essential)*: Validates runtime endpoint online and enabled status.
+5. **Task Suitability** *(Highly useful)*: Semantic affinity matching (coding, math, reasoning, translation, creative writing).
+6. **Observed Reliability** *(Highly useful)*: Rolling uptime weight incorporated into composite ranking.
+7. **Current Load** *(Useful)*: Real-time concurrency penalty to mitigate queue saturation.
+8. **Cost Efficiency** *(Useful)*: Ceiling constraint and cost factor ranking.
 
 ---
 
@@ -57,9 +58,11 @@ As specified in the prototype requirements:
 ### 1. Start Backend Gateway
 ```bash
 cd backend
-python -m uvicorn main:app --reload --port 8000
+pip install -r requirements.txt
+python gateway.py
 ```
-API Documentation will be live at `http://localhost:8000/docs`.
+* The backend gateway starts on **`http://localhost:5000`**.
+* Health check: `http://localhost:5000/api/health`
 
 ### 2. Start Frontend UI
 ```bash
@@ -67,34 +70,56 @@ cd frontend
 npm install
 npm run dev
 ```
-Open `http://localhost:5173` in your browser.
+* Open **`http://localhost:3000`** in your browser.
+* Built with React 18, TypeScript, Vite, and custom glassmorphism design.
 
 ---
 
-## 🧪 Judge Benchmark Scenarios
+## 🧪 Automated Test Suite
 
-The UI includes 1-click test presets designed specifically for judging:
+Run the full automated test suite verifying Model Configuration (Pipeline A), Runtime Routing (Pipeline B), Judge Controls, and Failover:
 
-1. **⚡ Fast Fact Retrieval**: Simple query with a 2,000ms latency budget routes directly to **Qwen3.5 2B**.
-2. **⚖️ Everyday Balanced**: Moderate query with a 3,500ms budget routes to **Qwen3.5 4B**.
-3. **🧠 Deep Reasoning & Math**: Complex multi-step proof routes to **DeepSeek-R1 7B** (or **Phi-4-mini 3.8B**).
-4. **🚫 Strict SLA (Proof of No-Violation)**: Impossible constraint (e.g., Latency ≤ 400ms and Capability ≥ 9). Gateway immediately rejects rather than breaking constraints.
-5. **💥 Outage Failover Demo**: Simulates an outage on the primary model. Watch the gateway fail over to the next eligible model while strictly maintaining all constraints.
-6. **⏳ Timeout Failover Demo**: Simulates a latency breach on the primary model, triggering seamless constraint-preserving failover.
-7. **🎛️ Live Parameter Adjustment**: Go to the **Models** tab, adjust sliders (Latency, Reliability, Availability), and see the router re-compute live winners in real time.
+```bash
+cd backend
+python test_router_pipelines.py
+```
+
+### Included Tests:
+- `test_01_registry_defaults`: Model catalog initialization and defaults validation.
+- `test_02_patch_validation_invalid_values`: Validation rules rejecting out-of-bound judge patches.
+- `test_03_persistence_of_judge_changes`: Dynamic runtime updates persist across requests.
+- `test_04_test_a_normal_request`: Simple prompt under SLA routes to fastest eligible model (Qwen 2B).
+- `test_05_test_b_judge_increases_latency`: Latency increase triggers immediate dynamic switch to next eligible candidate.
+- `test_06_test_c_model_disabled`: Disabling active model triggers seamless constraint-preserving failover.
+- `test_07_test_d_impossible_constraints`: Impossible constraints return clean `NO_VALID_MODEL` rejection.
+- `test_08_test_e_reset_defaults`: Reset restores factory model configuration.
+- `test_09` to `test_18`: SLA hard boundary enforcement, neural complexity, load balancing, and vision detection.
 
 ---
 
-## 📡 API Endpoints
+## 📡 API Reference
 
 | Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/health` | Gateway health & live/sim status |
-| `GET` | `/api/models` | List all models with current metrics |
-| `GET` | `/api/models/{id}` | Get model details |
-| `PATCH` | `/api/models/{id}` | Update model config at runtime (Judge controls) |
-| `POST` | `/api/models/reset` | Restore all models to factory defaults |
-| `POST` | `/api/infer` | Dispatch query with constraints & failover |
-| `POST` | `/api/route` | Route-only evaluation (no model execution) |
-| `GET` | `/api/logs` | Fetch audit logs with full explainability |
-| `GET` | `/api/stats` | Aggregate observability metrics |
+| :--- | :--- | :--- |
+| `GET` | `/api/health` | Gateway health status, model counts, and router state |
+| `GET` | `/api/models` | List all models with real-time latency, context, and reliability |
+| `GET` | `/api/models/{id}` | Retrieve individual model specifications |
+| `PATCH` | `/api/models/{id}` | Update model parameters at runtime (Judge controls) |
+| `POST` | `/api/models/reset` | Restore all models to default configurations |
+| `POST` | `/api/infer` | Dispatch query with constraint validation & dynamic failover |
+| `POST` | `/api/route` | Dry-run routing analysis without executing model generation |
+| `GET` | `/api/logs` | Fetch comprehensive audit logs with full explainability matrices |
+| `GET` | `/api/stats` | Observability metrics (requests, success rate, latency breakdown) |
+| `GET` | `/api/brain` | Prompt Analyzer neural accuracy, evaluation sets, and metadata |
+
+---
+
+## 📊 Observability & UI Highlights
+
+- **Dynamic Explainability Box**: Visualizes the decision winner, prompt parameters, and pass/fail reasons for all candidates.
+- **Model Inspector & Sliders**: Live runtime adjustments for model latency, capability, and availability.
+- **Context Capacity Bar**: Visualizes token window limits against prompt requirements.
+- **Detailed Analysis Dashboard**:
+  - **Spider Radar Benchmark**: Geometric multi-axis performance profile (Capability, Speed, Context, Cost Efficiency, Reliability).
+  - **Engine Allocation Share**: Real-time traffic distribution across models.
+  - **Audit Trail**: Request IDs, timestamps, prompt snapshots, response times, and failover traces.

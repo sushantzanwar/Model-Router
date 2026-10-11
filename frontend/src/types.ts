@@ -17,9 +17,6 @@ export interface ModelInfo {
   provider: string;
   model_id: string;
   description: string;
-  size_gb?: string;
-  supports_images?: boolean;
-  capabilities?: string;
   available?: boolean;
 }
 

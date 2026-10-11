@@ -1,230 +1,189 @@
 """
-constraint_engine.py - Hard & Soft Constraint Evaluation for A-01 ModelRouter
-------------------------------------------------------------------------------
-Handles:
-1. Hard constraint checking (Bouncer):
-   - Availability and enabled status
-   - Max latency deadline budget (model.max_latency_ms <= request.max_latency_ms)
-   - Capability score floor (model.capability_score >= request.min_capability)
-   - Context length capacity (model.context_length >= request.min_context_length)
-   - Cost ceiling (model.cost_per_token <= request.max_cost_per_token)
-2. Soft scoring & ranking:
-   - lowest_latency / fastest: Ranks by model.avg_latency_ms
-   - cheapest: Ranks by cost_per_1k_tokens
-   - highest_capability: Ranks by model.capability_score
-   - balanced: Weighted scoring incorporating latency, cost, and capability
+constraint_engine.py - Hard constraints + multi-factor scoring for A-01 ModelRouter
+------------------------------------------------------------------------------------
+Stage 1 - Hard constraints (non-negotiable; one violation = rejected):
+   * availability / enabled
+   * queue-adjusted worst-case latency  <= judge's Max Latency
+   * cost per token                     <= judge's Max Cost / Token
+   * capability score                   >= max(judge's Min Capability, capability the prompt needs)
+   * context window                     >= max(judge's Min Context, tokens the prompt needs)
+   * vision support                     if the request carries images
+
+Stage 2 - Scoring of the survivors (0-100), seven factors:
+   latency, capability, reliability, task suitability, cost, current load, tier
+   Weights are chosen continuously from the prompt's complexity distribution (or from an
+   explicit preference), so simple prompts favour speed and hard prompts favour capability.
 """
 
 from dataclasses import dataclass
-from typing import List, Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
+
 from models import ModelProfile
+
+FACTORS = ["latency", "capability", "reliability", "task_suitability", "cost", "load"]
+
+# Weight profile per complexity tier; the router blends these by the tier probabilities.
+TIER_WEIGHTS = {
+    # simple prompts: any model above the capability floor is good enough -> extra capability is only wasted latency
+    "simple":   {"latency": 0.45, "capability": 0.00, "reliability": 0.15, "task_suitability": 0.25, "cost": 0.05, "load": 0.10},
+    "moderate": {"latency": 0.30, "capability": 0.12, "reliability": 0.15, "task_suitability": 0.28, "cost": 0.05, "load": 0.10},
+    "complex":  {"latency": 0.14, "capability": 0.30, "reliability": 0.15, "task_suitability": 0.29, "cost": 0.04, "load": 0.08},
+    "expert":   {"latency": 0.08, "capability": 0.38, "reliability": 0.14, "task_suitability": 0.30, "cost": 0.04, "load": 0.06},
+}
+PREFERENCE_WEIGHTS = {
+    "lowest_latency":     {"latency": 0.60, "capability": 0.05, "reliability": 0.12, "task_suitability": 0.13, "cost": 0.03, "load": 0.07},
+    "highest_capability": {"latency": 0.05, "capability": 0.55, "reliability": 0.12, "task_suitability": 0.22, "cost": 0.02, "load": 0.04},
+    "cheapest":           {"latency": 0.12, "capability": 0.08, "reliability": 0.10, "task_suitability": 0.15, "cost": 0.50, "load": 0.05},
+    "balanced":           {"latency": 0.22, "capability": 0.20, "reliability": 0.15, "task_suitability": 0.25, "cost": 0.08, "load": 0.10},
+}
+PREFERENCE_ALIASES = {"fastest": "lowest_latency", "quality": "highest_capability"}
+EXPERIMENTAL_PENALTY = 0.05      # applied under balanced / auto routing
+LATENCY_REF_MS = 10000.0         # normalisation when the judge sets no latency budget
+COST_REF_PER_TOKEN = 0.001       # normalisation when the judge sets no cost ceiling
+TYPICAL_ANSWER_TOKENS = 450      # answer length that a model's avg latency corresponds to
 
 
 @dataclass
 class CheckResult:
-    """Result of evaluating a single model against hard constraints."""
     passes: bool
     violations: List[str]
+    worst_case_latency_ms: int
 
 
 @dataclass
 class RankedModel:
-    """A model paired with its computed preference score."""
     model_key: str
     profile: ModelProfile
     score: float
     score_breakdown: Dict[str, float]
 
 
+def resolve_weights(preference: Optional[str], tier_distribution: Dict[str, float]) -> Tuple[str, Dict[str, float]]:
+    pref = (preference or "auto").lower()
+    pref = PREFERENCE_ALIASES.get(pref, pref)
+    if pref in PREFERENCE_WEIGHTS:
+        return pref, dict(PREFERENCE_WEIGHTS[pref])
+    blended = {f: 0.0 for f in FACTORS}
+    for tier, p in tier_distribution.items():
+        for f in FACTORS:
+            blended[f] += p * TIER_WEIGHTS[tier][f]
+    total = sum(blended.values()) or 1.0
+    return "auto", {f: round(v / total, 4) for f, v in blended.items()}
+
+
 class ConstraintEngine:
-    """
-    Evaluates model profiles against user/judge constraints.
-    """
 
-    _MAX_LATENCY_REF = 10000.0  # ms normalisation ceiling
-    _MAX_COST_REF = 0.001       # normalisation ceiling
+    # ------------------------------------------------------------------
+    # Stage 1: hard constraints
+    # ------------------------------------------------------------------
+    def check_model(self, model: ModelProfile, hard: dict, inflight: int = 0) -> CheckResult:
+        v: List[str] = []
 
-    _PREFERENCE_WEIGHTS = {
-        "cheapest": {"cost": 0.70, "latency": 0.20, "quality": 0.10},
-        "fastest": {"cost": 0.05, "latency": 0.85, "quality": 0.10},
-        "lowest_latency": {"cost": 0.05, "latency": 0.85, "quality": 0.10},
-        "highest_capability": {"cost": 0.05, "latency": 0.10, "quality": 0.85},
-        "quality": {"cost": 0.05, "latency": 0.10, "quality": 0.85},
-        "balanced": {"cost": 0.20, "latency": 0.45, "quality": 0.35},
-    }
-    _DEFAULT_PREFERENCE = "balanced"
-
-    def check_model(self, model: ModelProfile, constraints: dict) -> CheckResult:
-        """
-        Evaluate a model against hard non-negotiable constraints.
-        Violating even one constraint causes immediate rejection.
-        """
-        violations: List[str] = []
-
-        # 1. Availability & Enabled status
         if not model.availability or not model.enabled:
-            status_desc = []
-            if not model.availability:
-                status_desc.append("offline/unavailable")
-            if not model.enabled:
-                status_desc.append("disabled")
-            violations.append(f"Model is {' and '.join(status_desc)}")
+            states = [s for s, bad in (("offline/unavailable", not model.availability), ("disabled", not model.enabled)) if bad]
+            v.append(f"Model is {' and '.join(states)}")
 
-        # 2. Hard Latency Deadline:
-        # Check against model's configured max_latency_ms (or avg_latency_ms)
-        max_lat_budget = constraints.get("max_latency_ms")
-        if max_lat_budget is not None and max_lat_budget > 0:
-            # If model's configured upper-bound latency exceeds request deadline
-            effective_model_latency = getattr(model, "max_latency_ms", model.avg_latency_ms)
-            if effective_model_latency > max_lat_budget:
-                violations.append(
-                    f"Configured latency bound ({effective_model_latency}ms) exceeds request deadline ({max_lat_budget}ms)"
-                )
+        # Worst case = configured upper bound, plus one extra full slot of waiting if the model is saturated.
+        queued = max(0, inflight - model.max_concurrency + 1)
+        worst = int(model.max_latency_ms * (1 + queued))
+        budget = hard.get("max_latency_ms")
+        if budget:
+            if worst > budget:
+                extra = f" incl. queue of {queued}" if queued else ""
+                v.append(f"Worst-case latency {worst}ms{extra} exceeds Max Latency {int(budget)}ms")
 
-        # 3. Capability floor
-        min_cap = constraints.get("min_capability")
-        if min_cap is None:
-            min_cap = constraints.get("min_capability_score")
-        if min_cap is not None and min_cap > 0:
-            if model.capability_score < min_cap:
-                violations.append(
-                    f"Capability score ({model.capability_score:.1f}) is below minimum required ({min_cap})"
-                )
+        max_cost = hard.get("max_cost_per_token")
+        if max_cost is not None and model.cost_per_token > max_cost + 1e-15:
+            v.append(f"Cost ${model.cost_per_token:.6f}/token exceeds Max Cost ${max_cost:.6f}/token")
 
-        # 4. Context window floor
-        min_ctx = constraints.get("min_context_length")
-        if min_ctx is None:
-            min_ctx = constraints.get("required_context_length")
-        if min_ctx is not None and min_ctx > 0:
-            if model.context_length < min_ctx:
-                violations.append(
-                    f"Context capacity ({model.context_length}) is below required ({min_ctx})"
-                )
+        min_cap = hard.get("min_capability")
+        if min_cap and model.capability_score + 1e-9 < min_cap:
+            src = hard.get("_capability_source", "")
+            v.append(f"Capability {model.capability_score:.1f} below required {min_cap:.1f}{src}")
 
-        # 5. Cost ceiling
-        max_cost = constraints.get("max_cost_per_token")
-        if max_cost is None and "max_cost_per_1k_tokens" in constraints:
-            max_cost = constraints["max_cost_per_1k_tokens"] / 1000.0
-        if max_cost is not None and max_cost > 0:
-            if model.cost_per_token > max_cost:
-                violations.append(
-                    f"Cost (${model.cost_per_token:.6f}/tok) exceeds max budget (${max_cost:.6f}/tok)"
-                )
+        min_ctx = hard.get("min_context_length")
+        if min_ctx and model.context_length < min_ctx:
+            src = hard.get("_context_source", "")
+            v.append(f"Context window {model.context_length:,} below required {int(min_ctx):,} tokens{src}")
 
-        return CheckResult(passes=len(violations) == 0, violations=violations)
+        if hard.get("needs_vision") and not model.supports_images:
+            v.append("Request contains images but model has no vision support")
 
-    def rank_models(
-        self,
-        models: List[ModelProfile],
-        preference: Optional[str] = None,
-    ) -> List[RankedModel]:
-        """
-        Rank eligible candidates according to user preference.
-        """
-        pref = (preference or self._DEFAULT_PREFERENCE).lower()
+        return CheckResult(passes=not v, violations=v, worst_case_latency_ms=worst)
 
-        # Direct single-criterion optimizations
-        if pref in ("fastest", "lowest_latency"):
-            # Sort ascending by avg_latency_ms (lowest latency first)
-            sorted_models = sorted(models, key=lambda m: (m.avg_latency_ms, -m.capability_score))
-            ranked = []
-            for idx, m in enumerate(sorted_models):
-                score = round(max(0.1, 1.0 - (m.avg_latency_ms / self._MAX_LATENCY_REF)), 3)
-                ranked.append(RankedModel(
-                    model_key=m.model_key,
-                    profile=m,
-                    score=score,
-                    score_breakdown={
-                        "latency_rank": idx + 1,
-                        "avg_latency_ms": m.avg_latency_ms,
-                        "capability_score": m.capability_score,
-                    }
-                ))
-            return ranked
+    # ------------------------------------------------------------------
+    # Stage 2: scoring
+    # ------------------------------------------------------------------
+    def score_models(self, models: List[ModelProfile], weights: Dict[str, float], mode: str,
+                     task_distribution: Dict[str, float], expected_output_tokens: int, hard: dict,
+                     reliability_of, inflight_of) -> List[RankedModel]:
+        lat_ref = float(hard.get("max_latency_ms") or LATENCY_REF_MS)
+        max_cost = hard.get("max_cost_per_token")
+        cost_ref = max_cost if max_cost else COST_REF_PER_TOKEN
+        length_factor = min(2.0, max(0.6, 0.6 + 0.4 * expected_output_tokens / TYPICAL_ANSWER_TOKENS))
 
-        elif pref == "highest_capability":
-            sorted_models = sorted(models, key=lambda m: (-m.capability_score, m.avg_latency_ms))
-            ranked = []
-            for idx, m in enumerate(sorted_models):
-                score = round(m.capability_score / 10.0, 3)
-                ranked.append(RankedModel(
-                    model_key=m.model_key,
-                    profile=m,
-                    score=score,
-                    score_breakdown={
-                        "capability_rank": idx + 1,
-                        "capability_score": m.capability_score,
-                        "avg_latency_ms": m.avg_latency_ms,
-                    }
-                ))
-            return ranked
-
-        elif pref == "cheapest":
-            sorted_models = sorted(models, key=lambda m: (m.cost_per_1k_tokens, m.avg_latency_ms))
-            ranked = []
-            for idx, m in enumerate(sorted_models):
-                score = round(max(0.1, 1.0 - (m.cost_per_token / self._MAX_COST_REF)), 3)
-                ranked.append(RankedModel(
-                    model_key=m.model_key,
-                    profile=m,
-                    score=score,
-                    score_breakdown={
-                        "cost_rank": idx + 1,
-                        "cost_per_1k_tokens": m.cost_per_1k_tokens,
-                        "avg_latency_ms": m.avg_latency_ms,
-                    }
-                ))
-            return ranked
-
-        # Balanced weighted scoring
-        weights = self._PREFERENCE_WEIGHTS.get(pref, self._PREFERENCE_WEIGHTS["balanced"])
         ranked = []
         for m in models:
-            scores = self._compute_scores(m)
-            total = (
-                weights["cost"] * scores["cost_score"]
-                + weights["latency"] * scores["latency_score"]
-                + weights["quality"] * scores["quality_score"]
-            )
+            inflight = inflight_of(m.model_key)
+            load_ratio = min(1.0, inflight / max(1, m.max_concurrency))
+            expected_latency = m.avg_latency_ms * length_factor * (1 + load_ratio)
+            rel = reliability_of(m.model_key, m.reliability)
+            suit = sum(p * float(m.task_affinity.get(t, 0.5)) for t, p in task_distribution.items())
+
+            f = {
+                "latency": max(0.0, 1.0 - expected_latency / lat_ref),
+                "capability": m.capability_score / 10.0,
+                "reliability": rel,
+                "task_suitability": suit,
+                "cost": max(0.0, 1.0 - (m.cost_per_token / cost_ref if cost_ref else 0.0)),
+                "load": 1.0 - load_ratio,
+            }
+            total = sum(weights[k] * f[k] for k in FACTORS)
+            penalty = EXPERIMENTAL_PENALTY if (m.tier == "experimental" and mode in ("auto", "balanced")) else 0.0
+            total = max(0.0, total - penalty)
+
             ranked.append(RankedModel(
                 model_key=m.model_key,
                 profile=m,
-                score=round(total, 3),
+                score=round(total * 100, 2),
                 score_breakdown={
-                    **scores,
-                    "avg_latency_ms": m.avg_latency_ms,
+                    **{f"{k}_score": round(v * 100, 1) for k, v in f.items()},
                     "weights": weights,
-                }
+                    "tier_penalty": round(penalty * 100, 1),
+                    "expected_latency_ms": int(expected_latency),
+                    "reliability_observed": round(rel, 4),
+                    "inflight": inflight,
+                    "capability_0_100": round(m.capability_score * 10, 1),
+                },
             ))
-
-        ranked.sort(key=lambda r: r.score, reverse=True)
+        ranked.sort(key=lambda r: (r.score, r.profile.capability_score), reverse=True)
         return ranked
 
-    def _compute_scores(self, model: ModelProfile) -> Dict[str, float]:
-        norm_cost = min(1.0, model.cost_per_token / self._MAX_COST_REF)
-        norm_lat = min(1.0, model.avg_latency_ms / self._MAX_LATENCY_REF)
-        quality_score = min(1.0, max(0.1, model.capability_score / 10.0))
-
-        return {
-            "cost_score": round(1.0 - norm_cost, 3),
-            "latency_score": round(1.0 - norm_lat, 3),
-            "quality_score": round(quality_score, 3),
-        }
-
+    # ------------------------------------------------------------------
+    # Request validation
+    # ------------------------------------------------------------------
     def validate_constraints(self, constraints: dict) -> Tuple[bool, List[str]]:
         errors: List[str] = []
         if not isinstance(constraints, dict):
             return False, ["constraints must be a JSON object"]
 
+        def num(v):
+            return isinstance(v, (int, float)) and not isinstance(v, bool)
+
         for key in ("max_latency_ms", "min_context_length", "required_context_length"):
-            if key in constraints and constraints[key] is not None:
-                if not isinstance(constraints[key], (int, float)) or constraints[key] <= 0:
-                    errors.append(f"'{key}' must be positive")
-
+            if constraints.get(key) is not None and (not num(constraints[key]) or constraints[key] <= 0):
+                errors.append(f"'{key}' must be a positive number")
         for key in ("min_capability", "min_capability_score"):
-            if key in constraints and constraints[key] is not None:
-                val = constraints[key]
-                if not isinstance(val, (int, float)) or not (1 <= val <= 10):
-                    errors.append(f"'{key}' must be between 1 and 10")
-
-        return len(errors) == 0, errors
+            val = constraints.get(key)
+            if val is not None and (not num(val) or not (0 <= val <= 10)):
+                errors.append(f"'{key}' must be between 0 and 10")
+        for key in ("max_cost_per_token", "max_cost_per_1k_tokens"):
+            val = constraints.get(key)
+            if val is not None and (not num(val) or val < 0):
+                errors.append(f"'{key}' cannot be negative")
+        pref = constraints.get("preference")
+        if pref is not None:
+            p = PREFERENCE_ALIASES.get(str(pref).lower(), str(pref).lower())
+            if p not in PREFERENCE_WEIGHTS and p != "auto":
+                errors.append(f"'preference' must be one of auto, {', '.join(PREFERENCE_WEIGHTS)}")
+        return not errors, errors

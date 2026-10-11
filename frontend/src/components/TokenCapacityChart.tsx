@@ -9,65 +9,58 @@ export default function TokenCapacityChart({ models }: Props) {
   if (!models || models.length === 0) {
     return (
       <div style={styles.empty}>
-        <p style={{ margin: 0, fontSize: 12, color: '#999' }}>No models available.</p>
+        <p style={{ margin: 0, fontSize: 12, color: '#6b7280' }}>No models available.</p>
       </div>
     );
   }
 
-  // Maximum reference context length for scaling (131,072 tokens = 128K)
   const maxTokensRef = 131072;
 
   const formatTokens = (num: number) => {
-    if (num >= 1000) {
-      return `${Math.round(num / 1024)}K`;
-    }
+    if (num >= 1000) return `${Math.round(num / 1024)}K`;
     return `${num}`;
   };
 
   return (
     <div style={styles.container}>
       <div style={styles.subhead}>
-        <span>Context window token capacity per model</span>
-        <span style={styles.subheadMax}>Max: 128K</span>
+        <span>Context window capacity</span>
+        <span style={styles.subheadMax}>Max ref: 128K</span>
       </div>
 
       <div style={styles.chartList}>
         {models.map((m) => {
           const tokens = m.context_length || 32768;
-          const percentage = Math.min(100, Math.max(12, (tokens / maxTokensRef) * 100));
+          const percentage = Math.min(100, Math.max(10, (tokens / maxTokensRef) * 100));
           const isOnline = m.availability && m.enabled;
 
-          // Color coded based on capacity tier
           const barColor = !isOnline
-            ? '#d1d5db'
+            ? 'rgba(255,255,255,0.08)'
             : tokens >= 100000
-            ? '#2563eb'
+            ? 'linear-gradient(90deg, #818cf8, #60a5fa)'
             : tokens >= 60000
-            ? '#0891b2'
-            : '#4f46e5';
+            ? 'linear-gradient(90deg, #34d399, #0891b2)'
+            : 'linear-gradient(90deg, #a78bfa, #818cf8)';
 
           return (
             <div key={m.model_key} style={styles.row}>
-              {/* Top info */}
               <div style={styles.modelHeader}>
                 <div style={styles.nameGroup}>
                   <span
                     style={{
                       ...styles.dot,
-                      background: isOnline ? '#16a34a' : '#dc2626',
+                      background: isOnline ? 'var(--green)' : 'var(--red)',
+                      boxShadow: isOnline ? '0 0 5px rgba(52,211,153,0.4)' : 'none',
                     }}
                   />
                   <span style={styles.modelName}>{m.name}</span>
-                  {m.size_gb && <span style={styles.sizeTag}>{m.size_gb}</span>}
-                  {m.supports_images && <span style={styles.visionTag}>Vision</span>}
                 </div>
                 <div style={styles.tokenValues}>
-                  <strong style={styles.tokenCount}>{tokens.toLocaleString()}</strong>
-                  <span style={styles.tokenTag}>({formatTokens(tokens)})</span>
+                  <strong style={styles.tokenCount}>{formatTokens(tokens)}</strong>
+                  <span style={styles.tokenRaw}>{tokens.toLocaleString()}</span>
                 </div>
               </div>
 
-              {/* Graphical Bar */}
               <div style={styles.barTrack}>
                 <div
                   style={{
@@ -84,16 +77,16 @@ export default function TokenCapacityChart({ models }: Props) {
 
       <div style={styles.legend}>
         <div style={styles.legendItem}>
-          <span style={{ ...styles.legendDot, background: '#4f46e5' }} />
-          <span>32K (Standard)</span>
+          <span style={{ ...styles.legendDot, background: 'linear-gradient(135deg, #a78bfa, #818cf8)' }} />
+          <span>32K</span>
         </div>
         <div style={styles.legendItem}>
-          <span style={{ ...styles.legendDot, background: '#0891b2' }} />
-          <span>64K (Extended)</span>
+          <span style={{ ...styles.legendDot, background: 'linear-gradient(135deg, #34d399, #0891b2)' }} />
+          <span>64K</span>
         </div>
         <div style={styles.legendItem}>
-          <span style={{ ...styles.legendDot, background: '#2563eb' }} />
-          <span>128K (Ultra-long)</span>
+          <span style={{ ...styles.legendDot, background: 'linear-gradient(135deg, #818cf8, #60a5fa)' }} />
+          <span>128K</span>
         </div>
       </div>
     </div>
@@ -113,13 +106,14 @@ const styles: Record<string, React.CSSProperties> = {
   subhead: {
     display: 'flex',
     justifyContent: 'space-between',
-    fontSize: 11,
-    color: '#777',
-    marginBottom: 2,
+    fontSize: 10,
+    color: '#6b7280',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.04em',
   },
   subheadMax: {
     fontWeight: 600,
-    color: '#555',
+    color: '#9aa0a6',
   },
   chartList: {
     display: 'flex',
@@ -129,11 +123,11 @@ const styles: Record<string, React.CSSProperties> = {
   row: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 5,
-    padding: '8px 10px',
-    borderRadius: 6,
-    background: '#fafafa',
-    border: '1px solid #f0f0f0',
+    gap: 6,
+    padding: '9px 11px',
+    borderRadius: 8,
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid rgba(255,255,255,0.06)',
   },
   modelHeader: {
     display: 'flex',
@@ -143,7 +137,7 @@ const styles: Record<string, React.CSSProperties> = {
   nameGroup: {
     display: 'flex',
     alignItems: 'center',
-    gap: 6,
+    gap: 7,
   },
   dot: {
     width: 6,
@@ -154,67 +148,51 @@ const styles: Record<string, React.CSSProperties> = {
   modelName: {
     fontSize: 12,
     fontWeight: 600,
-    color: '#222',
-  },
-  sizeTag: {
-    fontSize: 10,
-    color: '#666',
-    background: '#f3f4f6',
-    padding: '1px 4px',
-    borderRadius: 3,
-    fontWeight: 500,
-  },
-  visionTag: {
-    fontSize: 10,
-    color: '#2563eb',
-    background: '#eff6ff',
-    padding: '1px 4px',
-    borderRadius: 3,
-    fontWeight: 600,
+    color: 'var(--text-primary)',
   },
   tokenValues: {
     display: 'flex',
     alignItems: 'center',
-    gap: 5,
+    gap: 6,
   },
   tokenCount: {
-    fontSize: 12,
-    color: '#1a1a1a',
+    fontSize: 13,
+    color: '#a5b4fc',
     fontFamily: 'monospace',
+    fontWeight: 700,
   },
-  tokenTag: {
-    fontSize: 11,
-    color: '#666',
-    fontWeight: 500,
+  tokenRaw: {
+    fontSize: 10,
+    color: '#6b7280',
   },
   barTrack: {
     width: '100%',
-    height: 6,
-    borderRadius: 3,
-    background: '#e5e7eb',
+    height: 4,
+    borderRadius: 2,
+    background: 'rgba(255,255,255,0.07)',
     overflow: 'hidden',
   },
   barFill: {
     height: '100%',
-    borderRadius: 3,
-    transition: 'width 0.4s ease',
+    borderRadius: 2,
+    transition: 'width 0.5s ease',
   },
   legend: {
     display: 'flex',
-    justifyContent: 'space-between',
+    gap: 12,
     fontSize: 10,
-    color: '#888',
+    color: '#6b7280',
     paddingTop: 4,
-    borderTop: '1px solid #f0f0f0',
+    borderTop: '1px solid rgba(255,255,255,0.06)',
   },
   legendItem: {
     display: 'flex',
     alignItems: 'center',
-    gap: 4,
+    gap: 5,
   },
   legendDot: {
-    width: 6,
-    height: 6,
+    width: 8,
+    height: 8,
     borderRadius: 2,
   },
 };

@@ -27,8 +27,9 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+/lib/
+/lib64/
+!frontend/src/lib/
 parts/
 sdist/
 var/
@@ -45,3 +46,8 @@ wheels/
 .DS_Store
 Thumbs.db
 repo-clone/
+
+# ModelRouter runtime artifacts
+backend/brain/.cache/
+backend/runtime_stats.json
+backend/test_models_config.json

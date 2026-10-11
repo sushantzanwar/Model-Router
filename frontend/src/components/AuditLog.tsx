@@ -23,7 +23,7 @@ export default function AuditLog({ logs }: Props) {
   if (!logs || logs.length === 0) {
     return (
       <div style={styles.empty}>
-        <p style={{ margin: 0, fontSize: 12, color: '#999' }}>No routing events recorded yet.</p>
+        <p style={{ margin: 0, fontSize: 12, color: '#9aa0a6' }}>No routing events recorded yet.</p>
       </div>
     );
   }
@@ -44,8 +44,8 @@ export default function AuditLog({ logs }: Props) {
               <span
                 style={{
                   ...styles.statusBadge,
-                  background: isOk ? '#dcfce7' : '#fee2e2',
-                  color: isOk ? '#15803d' : '#b91c1c',
+                  background: isOk ? 'rgba(52,211,153,0.12)' : 'rgba(248,113,113,0.12)',
+                  color: isOk ? '#34d399' : '#f87171',
                 }}
               >
                 {isOk ? 'OK' : 'FAIL'}
@@ -86,10 +86,10 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: 'center',
   },
   entry: {
-    padding: '7px 9px',
-    borderRadius: 6,
-    background: '#fcfcfc',
-    border: '1px solid #f0f0f0',
+    padding: '8px 10px',
+    borderRadius: 8,
+    background: 'rgba(255, 255, 255, 0.02)',
+    border: '1px solid rgba(255, 255, 255, 0.06)',
     fontSize: 11,
     lineHeight: 1.4,
   },
@@ -99,44 +99,43 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 6,
   },
   time: {
-    color: '#999',
+    color: '#9aa0a6',
   },
   reqId: {
-    color: '#444',
+    color: '#e3e3e3',
     fontWeight: 600,
   },
   statusBadge: {
     fontSize: 9,
     fontWeight: 700,
     padding: '1px 5px',
-    borderRadius: 3,
+    borderRadius: 4,
     marginLeft: 'auto',
   },
   bottomLine: {
     display: 'flex',
     alignItems: 'center',
     gap: 8,
-    marginTop: 3,
+    marginTop: 4,
   },
   modelTag: {
-    color: '#2563eb',
+    color: '#8ab4f8',
     fontWeight: 600,
   },
   ms: {
-    color: '#888',
+    color: '#9aa0a6',
   },
   simBadge: {
     fontSize: 9,
-    background: '#f3f4f6',
-    color: '#6b7280',
+    background: 'rgba(255, 255, 255, 0.06)',
+    color: '#9aa0a6',
     padding: '1px 4px',
-    borderRadius: 2,
-    border: '1px solid #e5e7eb',
+    borderRadius: 3,
   },
   preview: {
-    color: '#666',
+    color: '#9aa0a6',
     fontSize: 10,
-    marginTop: 3,
+    marginTop: 4,
     whiteSpace: 'nowrap',
     overflow: 'hidden',
     textOverflow: 'ellipsis',

@@ -41,162 +41,138 @@ export default function ModelConfigModal({ model, onClose, onSaveSuccess }: Prop
     }
   };
 
+  const isActive = availability && enabled;
+
   return (
     <div style={styles.overlay} onClick={onClose}>
       <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div style={styles.header}>
-          <div>
+          <div style={styles.headerContent}>
             <div style={styles.titleRow}>
               <span style={styles.title}>{model.name}</span>
-              <span style={{
-                ...styles.badge,
-                background: (availability && enabled) ? '#e6f4ea' : '#fce8e6',
-                color: (availability && enabled) ? '#137333' : '#c5221f',
-              }}>
-                {(availability && enabled) ? 'ACTIVE' : 'OFFLINE/DISABLED'}
+              <span
+                style={{
+                  ...styles.statusBadge,
+                  background: isActive ? 'rgba(52,211,153,0.12)' : 'rgba(248,113,113,0.12)',
+                  color: isActive ? '#34d399' : '#f87171',
+                  borderColor: isActive ? 'rgba(52,211,153,0.3)' : 'rgba(248,113,113,0.3)',
+                }}
+              >
+                {isActive ? '● ACTIVE' : '● OFFLINE'}
               </span>
             </div>
             <div style={styles.roleText}>{model.role}</div>
           </div>
-          <button style={styles.closeBtn} onClick={onClose}>✕</button>
+          <button style={styles.closeBtn} onClick={onClose} aria-label="Close">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
         </div>
 
-        {error && <div style={styles.errorBox}>{error}</div>}
+        {/* Error */}
+        {error && (
+          <div style={styles.errorBox}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+            {error}
+          </div>
+        )}
 
-        {/* Content Body */}
+        {/* Body */}
         <div style={styles.body}>
-          {/* Latency Comparison Info Box */}
+          {/* Measured latency info */}
           <div style={styles.infoBox}>
             <div style={styles.infoRow}>
-              <span>Official Model ID:</span>
-              <code style={{ color: '#1a1a1a', background: '#e5e7eb', padding: '1px 5px', borderRadius: 3 }}>
-                {model.model_id}
-              </code>
+              <span style={styles.infoLabel}>Measured Latency</span>
+              <span style={styles.infoValue}>{model.measured_latency_ms}ms</span>
             </div>
-            {model.size_gb && (
-              <div style={{ ...styles.infoRow, marginTop: 4 }}>
-                <span>Installed Size:</span>
-                <strong style={{ color: '#1a1a1a' }}>{model.size_gb}</strong>
-              </div>
-            )}
-            <div style={{ ...styles.infoRow, marginTop: 4 }}>
-              <span>Actual Measured Latency:</span>
-              <strong style={{ color: '#1a1a1a' }}>{model.measured_latency_ms}ms</strong>
-            </div>
-            <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>
-              * Measured from latest inference execution. The parameters below are judge-configurable estimates.
-            </div>
+            <p style={styles.infoHint}>
+              Actual measured from latest inference. Parameters below are judge-configurable estimates.
+            </p>
           </div>
 
           {/* Form Fields */}
           <div style={styles.formGrid}>
-            <div style={styles.field}>
-              <label style={styles.label}>
-                Configured Average Latency (avg_latency_ms)
-                <span style={styles.hint}>Used to rank candidates</span>
-              </label>
-              <div style={styles.inputGroup}>
-                <input
-                  type="number"
-                  min="50"
-                  max="20000"
-                  step="50"
-                  value={avgLatency}
-                  onChange={(e) => setAvgLatency(Number(e.target.value))}
-                  style={styles.input}
-                />
-                <span style={styles.unit}>ms</span>
-              </div>
-            </div>
+            <SliderField
+              label="Avg Latency (avg_latency_ms)"
+              hint="Used to rank candidates"
+              value={avgLatency}
+              min={50}
+              max={20000}
+              step={50}
+              unit="ms"
+              color="#60a5fa"
+              onChange={setAvgLatency}
+            />
 
-            <div style={styles.field}>
-              <label style={styles.label}>
-                Max Latency Deadline Bound (max_latency_ms)
-                <span style={styles.hint}>Rejects candidate if request budget is exceeded</span>
-              </label>
-              <div style={styles.inputGroup}>
-                <input
-                  type="number"
-                  min="100"
-                  max="30000"
-                  step="100"
-                  value={maxLatency}
-                  onChange={(e) => setMaxLatency(Number(e.target.value))}
-                  style={styles.input}
-                />
-                <span style={styles.unit}>ms</span>
-              </div>
-            </div>
+            <SliderField
+              label="Max Latency Deadline (max_latency_ms)"
+              hint="Rejects if budget exceeded"
+              value={maxLatency}
+              min={100}
+              max={30000}
+              step={100}
+              unit="ms"
+              color="#f87171"
+              onChange={setMaxLatency}
+            />
 
-            <div style={styles.field}>
-              <label style={styles.label}>
-                Capability Rating (1.0 - 10.0)
-                <span style={styles.hint}>Score used for quality and reasoning matching</span>
-              </label>
-              <input
-                type="number"
-                min="1.0"
-                max="10.0"
-                step="0.1"
-                value={capability}
-                onChange={(e) => setCapability(Number(e.target.value))}
-                style={styles.input}
-              />
-            </div>
+            <SliderField
+              label="Capability Rating"
+              hint="Score for quality and reasoning"
+              value={capability}
+              min={1}
+              max={10}
+              step={0.1}
+              unit="/10"
+              color="#a78bfa"
+              onChange={setCapability}
+            />
 
-            <div style={styles.field}>
-              <label style={styles.label}>
-                Context Length Capacity
-                <span style={styles.hint}>Total context window tokens</span>
-              </label>
-              <input
-                type="number"
-                min="1024"
-                max="262144"
-                step="1024"
-                value={contextLength}
-                onChange={(e) => setContextLength(Number(e.target.value))}
-                style={styles.input}
-              />
-            </div>
+            <SliderField
+              label="Context Length Capacity"
+              hint="Total context window tokens"
+              value={contextLength}
+              min={1024}
+              max={262144}
+              step={1024}
+              unit=" tokens"
+              color="#34d399"
+              onChange={setContextLength}
+            />
 
-            <div style={styles.field}>
-              <label style={styles.label}>
-                Reliability Score (0.0 - 1.0)
-                <span style={styles.hint}>Historical stability factor</span>
-              </label>
-              <input
-                type="number"
-                min="0.0"
-                max="1.0"
-                step="0.01"
-                value={reliability}
-                onChange={(e) => setReliability(Number(e.target.value))}
-                style={styles.input}
-              />
-            </div>
+            <SliderField
+              label="Reliability Score"
+              hint="Historical stability factor (0–1)"
+              value={reliability}
+              min={0}
+              max={1}
+              step={0.01}
+              unit=""
+              color="#fbbf24"
+              onChange={setReliability}
+            />
 
+            {/* Toggles */}
             <div style={styles.togglesRow}>
-              <label style={styles.toggleLabel}>
-                <input
-                  type="checkbox"
-                  checked={availability}
-                  onChange={(e) => setAvailability(e.target.checked)}
-                  style={styles.checkbox}
-                />
-                <span>Online Availability (Online/Offline)</span>
-              </label>
-
-              <label style={styles.toggleLabel}>
-                <input
-                  type="checkbox"
-                  checked={enabled}
-                  onChange={(e) => setEnabled(e.target.checked)}
-                  style={styles.checkbox}
-                />
-                <span>Routing Enabled</span>
-              </label>
+              <ToggleField
+                label="Online Availability"
+                hint="Mark model as available/offline"
+                checked={availability}
+                onChange={setAvailability}
+              />
+              <ToggleField
+                label="Routing Enabled"
+                hint="Include model in routing candidates"
+                checked={enabled}
+                onChange={setEnabled}
+              />
             </div>
           </div>
         </div>
@@ -206,14 +182,161 @@ export default function ModelConfigModal({ model, onClose, onSaveSuccess }: Prop
           <button style={styles.cancelBtn} onClick={onClose} disabled={saving}>
             Cancel
           </button>
-          <button style={styles.saveBtn} onClick={handleSave} disabled={saving}>
-            {saving ? 'Persisting...' : 'Save Changes'}
+          <button
+            style={{
+              ...styles.saveBtn,
+              opacity: saving ? 0.7 : 1,
+            }}
+            onClick={handleSave}
+            disabled={saving}
+          >
+            {saving ? (
+              <>
+                <span style={styles.savingDot} />
+                Persisting…
+              </>
+            ) : (
+              'Save Changes'
+            )}
           </button>
         </div>
       </div>
     </div>
   );
 }
+
+function SliderField({
+  label,
+  hint,
+  value,
+  min,
+  max,
+  step,
+  unit,
+  color,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  unit: string;
+  color: string;
+  onChange: (v: number) => void;
+}) {
+  const pct = ((value - min) / (max - min)) * 100;
+
+  return (
+    <div style={sliderStyles.field}>
+      <div style={sliderStyles.labelRow}>
+        <label style={sliderStyles.label}>{label}</label>
+        <span style={{ ...sliderStyles.valueDisplay, color }}>{value}{unit}</span>
+      </div>
+      <p style={sliderStyles.hint}>{hint}</p>
+      <div style={sliderStyles.sliderWrap}>
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          onChange={(e) => onChange(Number(e.target.value))}
+          style={{
+            background: `linear-gradient(90deg, ${color} ${pct}%, rgba(255,255,255,0.1) ${pct}%)`,
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function ToggleField({
+  label,
+  hint,
+  checked,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <div style={toggleStyles.row}>
+      <div style={toggleStyles.info}>
+        <span style={toggleStyles.label}>{label}</span>
+        <span style={toggleStyles.hint}>{hint}</span>
+      </div>
+      <label className="toggle-switch">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(e) => onChange(e.target.checked)}
+        />
+        <span className="toggle-slider" />
+      </label>
+    </div>
+  );
+}
+
+const sliderStyles: Record<string, React.CSSProperties> = {
+  field: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 5,
+  },
+  labelRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  label: {
+    fontSize: 12,
+    fontWeight: 600,
+    color: '#e3e3e3',
+  },
+  valueDisplay: {
+    fontSize: 13,
+    fontWeight: 700,
+    fontFamily: 'monospace',
+  },
+  hint: {
+    fontSize: 11,
+    color: '#6b7280',
+    marginTop: -2,
+  },
+  sliderWrap: {
+    marginTop: 2,
+  },
+};
+
+const toggleStyles: Record<string, React.CSSProperties> = {
+  row: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '10px 14px',
+    background: 'rgba(255,255,255,0.03)',
+    borderRadius: 10,
+    border: '1px solid rgba(255,255,255,0.07)',
+  },
+  info: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 2,
+  },
+  label: {
+    fontSize: 13,
+    fontWeight: 600,
+    color: '#e3e3e3',
+  },
+  hint: {
+    fontSize: 11,
+    color: '#6b7280',
+  },
+};
 
 const styles: Record<string, React.CSSProperties> = {
   overlay: {
@@ -222,174 +345,175 @@ const styles: Record<string, React.CSSProperties> = {
     left: 0,
     right: 0,
     bottom: 0,
-    background: 'rgba(0, 0, 0, 0.45)',
+    background: 'rgba(0, 0, 0, 0.7)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 1000,
-    backdropFilter: 'blur(2px)',
+    backdropFilter: 'blur(8px)',
+    WebkitBackdropFilter: 'blur(8px)',
+    animation: 'fadeSlideUp 0.2s ease',
   },
   modal: {
-    background: '#ffffff',
+    background: 'rgba(25,26,28,0.97)',
+    backdropFilter: 'blur(20px)',
+    WebkitBackdropFilter: 'blur(20px)',
     width: '90%',
-    maxWidth: 540,
-    borderRadius: 12,
-    boxShadow: '0 12px 36px rgba(0,0,0,0.18)',
+    maxWidth: 560,
+    borderRadius: 18,
+    boxShadow: '0 20px 60px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.08)',
     display: 'flex',
     flexDirection: 'column',
     overflow: 'hidden',
-    border: '1px solid #e0e0e0',
+    border: '1px solid rgba(255,255,255,0.1)',
   },
   header: {
-    padding: '18px 24px',
-    borderBottom: '1px solid #eee',
+    padding: '20px 24px',
+    borderBottom: '1px solid rgba(255,255,255,0.07)',
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
+  },
+  headerContent: {
+    flex: 1,
   },
   titleRow: {
     display: 'flex',
     alignItems: 'center',
     gap: 10,
+    marginBottom: 4,
   },
   title: {
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: 700,
-    color: '#1a1a1a',
+    color: '#e3e3e3',
   },
-  badge: {
+  statusBadge: {
     fontSize: 10,
     fontWeight: 700,
-    padding: '2px 8px',
-    borderRadius: 4,
+    padding: '3px 9px',
+    borderRadius: 20,
+    border: '1px solid',
     letterSpacing: '0.04em',
   },
   roleText: {
     fontSize: 13,
-    color: '#666',
-    marginTop: 4,
+    color: '#6b7280',
   },
   closeBtn: {
-    background: 'none',
-    border: 'none',
-    fontSize: 16,
-    color: '#999',
+    background: 'rgba(255,255,255,0.06)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: 8,
+    color: '#9aa0a6',
     cursor: 'pointer',
-    padding: 4,
+    width: 32,
+    height: 32,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    marginLeft: 12,
   },
   errorBox: {
-    background: '#fce8e6',
-    color: '#c5221f',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    background: 'rgba(248,113,113,0.08)',
+    color: '#f87171',
     padding: '10px 24px',
     fontSize: 13,
-    borderBottom: '1px solid #f5c2c0',
+    borderBottom: '1px solid rgba(248,113,113,0.15)',
   },
   body: {
     padding: '20px 24px',
     maxHeight: '65vh',
     overflowY: 'auto',
-  },
-  infoBox: {
-    background: '#f8f9fa',
-    border: '1px solid #e9ecef',
-    borderRadius: 8,
-    padding: '12px 14px',
-    marginBottom: 16,
-  },
-  infoRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    fontSize: 13,
-    color: '#555',
-  },
-  formGrid: {
     display: 'flex',
     flexDirection: 'column',
     gap: 16,
   },
-  field: {
+  infoBox: {
+    background: 'rgba(129,140,248,0.06)',
+    border: '1px solid rgba(129,140,248,0.2)',
+    borderRadius: 12,
+    padding: '12px 16px',
     display: 'flex',
     flexDirection: 'column',
-    gap: 5,
+    gap: 6,
   },
-  label: {
-    fontSize: 12,
-    fontWeight: 600,
-    color: '#333',
+  infoRow: {
     display: 'flex',
-    flexDirection: 'column',
-  },
-  hint: {
-    fontSize: 11,
-    color: '#888',
-    fontWeight: 400,
-    marginTop: 2,
-  },
-  inputGroup: {
-    display: 'flex',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 8,
   },
-  input: {
-    padding: '8px 12px',
-    borderRadius: 6,
-    border: '1px solid #ccc',
-    fontSize: 14,
-    color: '#1a1a1a',
-    width: '100%',
-    outline: 'none',
-  },
-  unit: {
-    fontSize: 13,
-    color: '#777',
+  infoLabel: {
+    fontSize: 12,
+    color: '#9aa0a6',
     fontWeight: 500,
+  },
+  infoValue: {
+    fontSize: 15,
+    fontWeight: 700,
+    color: '#a5b4fc',
+    fontFamily: 'monospace',
+  },
+  infoHint: {
+    fontSize: 11,
+    color: '#6b7280',
+    lineHeight: 1.4,
+  },
+  formGrid: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 20,
   },
   togglesRow: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 10,
-    paddingTop: 8,
-    borderTop: '1px solid #eee',
-  },
-  toggleLabel: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
-    fontSize: 13,
-    color: '#333',
-    cursor: 'pointer',
-  },
-  checkbox: {
-    width: 16,
-    height: 16,
-    cursor: 'pointer',
+    gap: 8,
+    paddingTop: 4,
   },
   footer: {
-    padding: '14px 24px',
-    borderTop: '1px solid #eee',
-    background: '#fcfcfc',
+    padding: '16px 24px',
+    borderTop: '1px solid rgba(255,255,255,0.07)',
+    background: 'rgba(255,255,255,0.02)',
     display: 'flex',
     justifyContent: 'flex-end',
     gap: 12,
   },
   cancelBtn: {
-    padding: '8px 16px',
-    borderRadius: 6,
-    border: '1px solid #ccc',
-    background: '#fff',
-    color: '#444',
+    padding: '9px 18px',
+    borderRadius: 10,
+    border: '1px solid rgba(255,255,255,0.12)',
+    background: 'rgba(255,255,255,0.05)',
+    color: '#9aa0a6',
     fontSize: 13,
     fontWeight: 500,
     cursor: 'pointer',
+    transition: 'all 0.15s ease',
   },
   saveBtn: {
-    padding: '8px 18px',
-    borderRadius: 6,
+    padding: '9px 22px',
+    borderRadius: 10,
     border: 'none',
-    background: '#1a1a1a',
+    background: 'linear-gradient(135deg, #818cf8, #60a5fa)',
     color: '#fff',
     fontSize: 13,
-    fontWeight: 600,
+    fontWeight: 700,
     cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    boxShadow: '0 2px 12px rgba(129,140,248,0.35)',
+    transition: 'all 0.15s ease',
+  },
+  savingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: '50%',
+    border: '2px solid rgba(255,255,255,0.4)',
+    borderTopColor: '#fff',
+    display: 'inline-block',
+    animation: 'spin 0.6s linear infinite',
   },
 };

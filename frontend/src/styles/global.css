@@ -1,6 +1,6 @@
 /* =========================================================
    ModelRouter – Global CSS
-   Clean, minimal palette. No gradients. Claude-inspired.
+   Gemini Dark Cosmic Theme · Glassmorphism & High Polish
    ========================================================= */
 
 *, *::before, *::after {
@@ -10,23 +10,50 @@
 }
 
 :root {
-  --bg-chat: #ffffff;
-  --bg-inspector: #f9f9f9;
-  --border: #e5e5e5;
-  --text-primary: #1a1a1a;
-  --text-secondary: #666666;
-  --bubble-user-bg: #1a1a1a;
-  --bubble-user-text: #ffffff;
-  --bubble-ai-bg: #f0f0f0;
-  --bubble-ai-text: #1a1a1a;
-  --green: #16a34a;
-  --red: #dc2626;
-  --accent: #2563eb;
-  --accent-hover: #1d4ed8;
-  --radius-sm: 6px;
-  --radius-md: 12px;
-  --radius-lg: 18px;
-  --transition: 0.25s ease;
+  /* Core Gemini dark palette */
+  --bg-base: #131314;
+  --bg-surface: #1e1f20;
+  --bg-surface-hover: #282a2c;
+  --bg-surface-active: #333538;
+  --bg-input: #1e1f20;
+
+  /* Glassmorphism */
+  --glass-bg: rgba(30, 31, 32, 0.75);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-border-hover: rgba(255, 255, 255, 0.16);
+  --glass-blur: 16px;
+
+  /* Typography */
+  --text-primary: #e3e3e3;
+  --text-secondary: #9aa0a6;
+  --text-muted: #5f6368;
+  --text-link: #8ab4f8;
+
+  /* Accent gradient */
+  --accent-purple: #c084fc;
+  --accent-indigo: #818cf8;
+  --accent-blue: #60a5fa;
+  --accent-gradient: linear-gradient(135deg, #c084fc 0%, #818cf8 50%, #60a5fa 100%);
+
+  /* Status Colors */
+  --green: #34d399;
+  --green-bg: rgba(52, 211, 153, 0.12);
+  --red: #f87171;
+  --red-bg: rgba(248, 113, 113, 0.12);
+  --blue: #8ab4f8;
+
+  /* Gemini Chat Bubbles */
+  --bubble-user-bg: #1e293b;
+  --bubble-user-text: #f1f5f9;
+  --bubble-ai-bg: #1e1f20;
+  --bubble-ai-text: #e3e3e3;
+
+  /* Dimensions */
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-full: 9999px;
+  --transition: 0.18s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 html, body, #root {
@@ -36,21 +63,81 @@ html, body, #root {
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-    'Helvetica Neue', Arial, sans-serif;
+  font-family: 'Google Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   font-size: 14px;
   color: var(--text-primary);
-  background: var(--bg-chat);
+  background-color: #0b0c10;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* ── Scrollbar ─────────────────────────────────────────── */
-::-webkit-scrollbar { width: 5px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #d0d0d0; border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: #b0b0b0; }
+/* ── Scrollbars ─────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.15);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(138, 180, 248, 0.5);
+}
 
-/* ── Typing dots animation ─────────────────────────────── */
+/* Dedicated prominent slider / scroll bar for Analysis Window */
+.analysis-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.35) rgba(0, 0, 0, 0.25);
+  scrollbar-gutter: stable;
+}
+.analysis-scroll::-webkit-scrollbar {
+  width: 7px;
+}
+.analysis-scroll::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+.analysis-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.analysis-scroll::-webkit-scrollbar-thumb:hover {
+  background: #8ab4f8;
+}
+
+/* ── Typography & Gradient ──────────────────────────────── */
+.gradient-text {
+  background: var(--accent-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Animations ─────────────────────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes sidebarSlideIn {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(0); }
+}
+
+@keyframes pulseGlow {
+  0%, 100% { opacity: 0.8; transform: scale(1); }
+  50%      { opacity: 1; transform: scale(1.08); }
+}
+
 @keyframes blink {
   0%, 80%, 100% { opacity: 0.2; transform: scale(0.85); }
   40%            { opacity: 1;   transform: scale(1); }
@@ -58,22 +145,22 @@ body {
 
 .typing-dot {
   display: inline-block;
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  background: var(--text-secondary);
+  background: var(--accent-indigo);
   animation: blink 1.2s infinite;
 }
 .typing-dot:nth-child(2) { animation-delay: 0.2s; }
 .typing-dot:nth-child(3) { animation-delay: 0.4s; }
 
-/* ── Slider base reset ──────────────────────────────────── */
+/* ── Sliders ────────────────────────────────────────────── */
 input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
   height: 4px;
   border-radius: 2px;
-  background: var(--border);
+  background: rgba(255, 255, 255, 0.12);
   outline: none;
   cursor: pointer;
   width: 100%;
@@ -85,23 +172,27 @@ input[type="range"]::-webkit-slider-thumb {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: var(--accent);
+  background: #8ab4f8;
   cursor: pointer;
-  border: 2px solid #fff;
-  box-shadow: 0 0 0 1px var(--accent);
+  border: 2px solid #131314;
+  box-shadow: 0 0 0 1px rgba(138, 180, 248, 0.5);
+  transition: transform 0.15s ease;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
 }
 
 input[type="range"]::-moz-range-thumb {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: var(--accent);
+  background: #8ab4f8;
   cursor: pointer;
-  border: 2px solid #fff;
-  box-shadow: 0 0 0 1px var(--accent);
+  border: 2px solid #131314;
 }
 
-/* ── Toggle switch ─────────────────────────────────────── */
+/* ── Toggle Switch ──────────────────────────────────────── */
 .toggle-switch {
   position: relative;
   display: inline-block;
@@ -120,9 +211,10 @@ input[type="range"]::-moz-range-thumb {
   position: absolute;
   inset: 0;
   border-radius: 20px;
-  background: var(--red);
+  background: rgba(255, 255, 255, 0.12);
   cursor: pointer;
   transition: background var(--transition);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .toggle-slider::before {
@@ -131,16 +223,37 @@ input[type="range"]::-moz-range-thumb {
   height: 14px;
   width: 14px;
   left: 3px;
-  bottom: 3px;
+  bottom: 2px;
   border-radius: 50%;
-  background: #fff;
-  transition: transform var(--transition);
+  background: rgba(255, 255, 255, 0.5);
+  transition: transform var(--transition), background var(--transition);
 }
 
 .toggle-switch input:checked + .toggle-slider {
-  background: var(--green);
+  background: #8ab4f8;
+  border-color: #8ab4f8;
 }
 
 .toggle-switch input:checked + .toggle-slider::before {
   transform: translateX(16px);
+  background: #131314;
+}
+
+/* ── Textarea placeholder ───────────────────────────────── */
+textarea::placeholder {
+  color: var(--text-secondary);
+  opacity: 0.8;
+}
+textarea:focus {
+  outline: none;
+}
+
+/* ── Message Copy Button ────────────────────────────────── */
+.msg-copy-btn {
+  user-select: none;
+}
+.msg-copy-btn:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: #e3e3e3 !important;
+  opacity: 1 !important;
 }
