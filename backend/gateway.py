@@ -152,6 +152,21 @@ def dry_run_route():
     return _ok({"decision": decision})
 
 
+def _find_model_key(key_or_name, models):
+    if not key_or_name or not isinstance(key_or_name, str):
+        return None
+    val = key_or_name.strip()
+    if val.lower() == "auto":
+        return None
+    if val in models:
+        return val
+    val_lower = val.lower()
+    for k, m in models.items():
+        if k.lower() == val_lower or m.name.lower() == val_lower or val_lower in m.name.lower():
+            return k
+    return None
+
+
 @app.route("/api/infer", methods=["POST"])
 def infer():
     wall_start = time.time()
@@ -159,11 +174,107 @@ def infer():
     if err:
         return err
     prompt, constraints, images = parsed
+    body = request.get_json(silent=True) or {}
 
     request_id = str(uuid.uuid4())[:8]
     all_models = registry.get_all()
     profile = _router.analyze(prompt, has_images=bool(images))
     judge_latency = constraints.get("max_latency_ms")
+
+    # If user explicitly selected any model, that model directly answers (no backend routing intervention)
+    explicit_model_raw = (
+        body.get("model")
+        or body.get("preferred_model")
+        or constraints.get("preferred_model")
+        or constraints.get("model")
+    )
+    explicit_key = _find_model_key(explicit_model_raw, all_models)
+
+    if explicit_key and explicit_key in all_models:
+        profile_m = all_models[explicit_key]
+        with telemetry.track(explicit_key):
+            result = _adapter.call_model(profile_m, prompt, profile.expected_output_tokens, images or None)
+
+        telemetry.record(explicit_key, result["success"], result["latency_ms"])
+
+        candidates = []
+        for k, m in all_models.items():
+            is_winner = (k == explicit_key)
+            candidates.append({
+                "model_id": k,
+                "model_key": k,
+                "name": m.name,
+                "role": m.role,
+                "status": "selected" if is_winner else "passed",
+                "rejection_reason": None,
+                "violations": [],
+                "avg_latency_ms": m.avg_latency_ms,
+                "max_latency_ms": m.max_latency_ms,
+                "worst_case_latency_ms": m.max_latency_ms,
+                "capability_score": m.capability_score,
+                "context_length": m.context_length,
+                "cost_per_1k_tokens": m.cost_per_1k_tokens,
+                "available": m.available,
+                "tier": m.tier,
+                "score": 100.0 if is_winner else 0.0,
+                "rank": 1 if is_winner else 2,
+            })
+        candidates.sort(key=lambda c: (0 if c["model_key"] == explicit_key else 1, c["name"]))
+
+        decision = {
+            "request_id": request_id,
+            "status": "SUCCESS",
+            "selected": explicit_key,
+            "selected_name": profile_m.name,
+            "candidates": candidates,
+            "ranking": [explicit_key],
+            "explanation": f"User explicitly selected {profile_m.name}. Direct response without router intervention.",
+            "complexity": profile.to_dict(),
+            "analysis": profile.to_dict(),
+            "judge_constraints": constraints,
+            "effective_constraints": {},
+            "preference_used": "direct_user_selection",
+            "weights": {},
+            "failover_chain": [explicit_key],
+        }
+
+        total_ms = int((time.time() - wall_start) * 1000)
+        routing_logger.log_request(
+            request_id=request_id,
+            prompt=prompt,
+            constraints=constraints,
+            decision=decision,
+            response_time_ms=total_ms,
+            success=result["success"],
+            error=result.get("error"),
+            model_used=explicit_key,
+            simulated=result.get("simulated", False),
+            failover_count=0,
+        )
+
+        return _ok({
+            "status": "SUCCESS",
+            "request_id": request_id,
+            "model_used": explicit_key,
+            "model_name": profile_m.name,
+            "response": result["text"],
+            "latency_ms": result["latency_ms"],
+            "decision": decision,
+            "execution_mode": result.get("execution_mode"),
+            "simulated": result.get("simulated", False),
+            "failover_count": 0,
+            "audit_trail": [{
+                "attempt": 1,
+                "model_key": explicit_key,
+                "model_name": profile_m.name,
+                "success": result["success"],
+                "latency_ms": result["latency_ms"],
+                "sla_breached": False,
+                "simulated": result.get("simulated", False),
+                "execution_mode": result.get("execution_mode"),
+                "error": result.get("error"),
+            }],
+        })
 
     audit_trail, excluded, failover_chain = [], set(), []
     final_decision = final_response = final_model = last_error = None

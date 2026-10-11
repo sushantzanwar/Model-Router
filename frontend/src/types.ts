@@ -21,11 +21,13 @@ export interface ModelInfo {
 }
 
 export interface Constraints {
-  max_latency_ms: number;
-  max_cost_per_token: number;
-  min_capability: number;
-  min_context_length: number;
-  preference: 'lowest_latency' | 'fastest' | 'highest_capability' | 'cheapest' | 'balanced';
+  max_latency_ms?: number;
+  max_cost_per_token?: number;
+  min_capability?: number;
+  min_context_length?: number;
+  preference?: 'lowest_latency' | 'fastest' | 'highest_capability' | 'cheapest' | 'balanced' | string;
+  preferred_model?: string;
+  model?: string;
 }
 
 export interface CandidateResult {

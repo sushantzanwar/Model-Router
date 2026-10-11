@@ -69,6 +69,52 @@ class ModelRouter:
         request_id = request_id or str(uuid.uuid4())[:8]
         constraints = constraints or {}
         profile = profile or self.analyze(prompt, has_images)
+
+        # Check for direct user model selection
+        explicit_model_raw = constraints.get("preferred_model") or constraints.get("model")
+        if explicit_model_raw and isinstance(explicit_model_raw, str) and explicit_model_raw.strip().lower() != "auto":
+            target_key = explicit_model_raw.strip()
+            if target_key not in models:
+                val_lower = target_key.lower()
+                for k, mod in models.items():
+                    if k.lower() == val_lower or mod.name.lower() == val_lower or val_lower in mod.name.lower():
+                        target_key = k
+                        break
+            if target_key in models:
+                m = models[target_key]
+                candidates = []
+                for key, mod in models.items():
+                    is_sel = (key == target_key)
+                    candidates.append({
+                        "model_id": key, "model_key": key, "name": mod.name, "role": mod.role,
+                        "status": "selected" if is_sel else "passed",
+                        "rejection_reason": None,
+                        "violations": [],
+                        "avg_latency_ms": mod.avg_latency_ms, "max_latency_ms": mod.max_latency_ms,
+                        "worst_case_latency_ms": mod.max_latency_ms,
+                        "capability_score": mod.capability_score, "context_length": mod.context_length,
+                        "cost_per_1k_tokens": mod.cost_per_1k_tokens, "available": mod.available, "tier": mod.tier,
+                        "score": 100.0 if is_sel else 0.0,
+                        "rank": 1 if is_sel else 2,
+                    })
+                candidates.sort(key=lambda c: (0 if c["model_key"] == target_key else 1, c["name"]))
+                return {
+                    "request_id": request_id,
+                    "status": "SUCCESS",
+                    "selected": target_key,
+                    "selected_name": m.name,
+                    "candidates": candidates,
+                    "ranking": [target_key],
+                    "explanation": f"User explicitly selected {m.name}. Direct response without router intervention.",
+                    "complexity": profile.to_dict(),
+                    "analysis": profile.to_dict(),
+                    "judge_constraints": constraints,
+                    "effective_constraints": {},
+                    "preference_used": "direct_user_selection",
+                    "weights": {},
+                    "failover_chain": [target_key],
+                }
+
         hard = build_hard_constraints(constraints, profile)
         mode, weights = resolve_weights(constraints.get("preference"), profile.tier_distribution)
         tel = self._telemetry

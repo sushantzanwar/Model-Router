@@ -39,12 +39,18 @@ export async function resetModels(): Promise<ModelInfo[]> {
 
 export async function postInfer(
   prompt: string,
-  constraints: Constraints
+  constraints: Constraints = {},
+  model?: string
 ): Promise<InferResponse> {
+  const payload: any = { prompt, constraints };
+  if (model && model !== 'auto') {
+    payload.model = model;
+    payload.preferred_model = model;
+  }
   const res = await fetch(`${BASE}/infer`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, constraints }),
+    body: JSON.stringify(payload),
   });
   return res.json();
 }

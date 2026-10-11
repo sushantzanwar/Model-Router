@@ -93,8 +93,9 @@ export default function ChatPanel({
     setLoading(true);
 
     try {
-      const constraints = selectedModelKey !== 'auto' ? { preferred_model: selectedModelKey } : {};
-      const data = await postInfer(text, constraints as any);
+      const explicitModel = selectedModelKey !== 'auto' ? selectedModelKey : undefined;
+      const constraints: any = explicitModel ? { preferred_model: explicitModel, model: explicitModel } : {};
+      const data = await postInfer(text, constraints, explicitModel);
 
       if (data.decision) {
         onDecision(data.decision);

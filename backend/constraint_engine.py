@@ -181,6 +181,9 @@ class ConstraintEngine:
             val = constraints.get(key)
             if val is not None and (not num(val) or val < 0):
                 errors.append(f"'{key}' cannot be negative")
+        for key in ("preferred_model", "model"):
+            if constraints.get(key) is not None and not isinstance(constraints[key], str):
+                errors.append(f"'{key}' must be a string")
         pref = constraints.get("preference")
         if pref is not None:
             p = PREFERENCE_ALIASES.get(str(pref).lower(), str(pref).lower())
